@@ -359,12 +359,9 @@ def create_multicast_m3u(data_dir, multicast_m3u_file_name, udp_proxy_port = Non
 
         original_m3u_url = os.environ['ORIGINAL_M3U_URL']
         
-        # download_m3u_tqdm("http://promaxhd.com:8080/get.php?username=aQDS3nnTvt&password=enuHxGYEbt&type=m3u_plus&output=ts", original_m3u_file_name)
         download_m3u_tqdm(original_m3u_url, original_m3u_file_name)
         
       
-
-
         print ("Download finished.")
    
     if udp_proxy_port == None:
