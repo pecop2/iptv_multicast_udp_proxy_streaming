@@ -1,0 +1,20 @@
+version: '3.9'
+
+services:
+
+  udp_multicast_proxy:
+    build:
+      context: .
+    image: udp_multicast_proxy:0.0.1
+    container_name: udp-multicast-proxy-service
+    ports:
+      - "8010:8010"
+      - "8011:8011"
+    environment:
+      - ORIGINAL_M3U_URL=your_m3u_url_here
+      - NUMBER_OF_CLIENTS=3
+      - HOST_IP=local_ip_of_the_host_running_this_service
+    
+
+  
+   

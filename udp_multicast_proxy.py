@@ -15,6 +15,7 @@ from tqdm import tqdm
 import pickle
 from socket import timeout
 import shutil
+import platform
 
 
 class MulticastStream(threading.Thread):
@@ -105,16 +106,17 @@ def stop_multicast_player(multicast_address):
             
 def get_host_name_IP(): 
 
-    host_name_ip = ""
-    try: 
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        host_name_ip = s.getsockname()[0]
-        s.close()
-        # print ("Host ip:", host_name_ip)
-        return host_name_ip
-    except: 
-        print("Unable to get Hostname") 
+    # host_name_ip = ""
+    # try: 
+    #     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    #     s.connect(("8.8.8.8", 80))
+    #     host_name_ip = s.getsockname()[0]
+    #     s.close()
+    #     # print ("Host ip:", host_name_ip)
+    #     return host_name_ip
+    # except: 
+    #     print("Unable to get Hostname") 
+    return os.environ['HOST_IP']
 
 def write_data_stream(data_buffer, data_stream, packet_count, queue):
     whole_data=bytes()
@@ -257,12 +259,12 @@ def start_file_server(dir, port, mcast_channels_m3u_name):
             super().__init__(*args, directory=dir, **kwargs)
         
         def do_POST(self):
-            print (self.headers)
+            # print (self.headers)
 
             content_length = int(self.headers['Content-Length'])
             post_body = self.rfile.read(content_length)
   
-            print (post_body)
+            # print (post_body)
             
             self.send_response(HTTPStatus.OK)
             self.end_headers()
@@ -298,10 +300,13 @@ def get_receiving_multicast_socket(multicast_address, multicast_port):
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     except AttributeError:
         pass
-    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1) 
-    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
+    # sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1) # try with or without
+    # sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1) # try with or without
 
-    sock.bind(SERVER_ADDRESS)
+    if 'windows' in platform.system().lower():
+        sock.bind(SERVER_ADDRESS)
+    else:
+        sock.bind((multicast_address, multicast_port))
 
     group = socket.inet_aton(MULTICAST_GROUP)
     mreq = struct.pack('4sL', group, socket.INADDR_ANY)
@@ -351,8 +356,11 @@ def create_multicast_m3u(data_dir, multicast_m3u_file_name, udp_proxy_port = Non
 
     if not os.path.exists(original_m3u_file_name):
         print ("Downloading original m3u...")
+
+        original_m3u_url = os.environ['ORIGINAL_M3U_URL']
         
-        download_m3u_tqdm("http://promaxhd.com:8080/get.php?username=aQDS3nnTvt&password=enuHxGYEbt&type=m3u_plus&output=ts", original_m3u_file_name)
+        # download_m3u_tqdm("http://promaxhd.com:8080/get.php?username=aQDS3nnTvt&password=enuHxGYEbt&type=m3u_plus&output=ts", original_m3u_file_name)
+        download_m3u_tqdm(original_m3u_url, original_m3u_file_name)
         
       
 
@@ -439,6 +447,8 @@ def create_file_dirs(DATA_DIR, WEB_SERVER_DIRECTORY, mcast_m3u_path, UDP_PROXY_P
 ####################################################################################
 
 if __name__ == '__main__':
+    
+    vlc._default_instance = vlc.Instance(["--file-caching=2000 --network-caching=3000 --live-caching=300 --disc-caching=300 --cr-average=40 --clock-synchro=-1 --clock-jitter=5000"])
 
     vlc_players_lock = threading.Lock()
 
@@ -447,11 +457,14 @@ if __name__ == '__main__':
 
 
     WEB_SERVER_DIRECTORY = os.path.join(DATA_DIR, "web_server_m3u")
-    WEB_SERVER_PORT = 8000
+    WEB_SERVER_PORT = 8010
 
 
 
     NUMBER_OF_CLIENTS = 3
+
+    if 'NUMBER_OF_CLIENTS' in os.environ:
+        NUMBER_OF_CLIENTS = int(os.environ['NUMBER_OF_CLIENTS'])
 
     vlc_players_q = queue.Queue()
 
@@ -460,7 +473,7 @@ if __name__ == '__main__':
         vlc_players_q.put(media_list_player)
 
 
-    UDP_PROXY_PORT = 8001
+    UDP_PROXY_PORT = 8011
 
     listener_addr = ('', UDP_PROXY_PORT)
     listener_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -488,9 +501,10 @@ if __name__ == '__main__':
     http_server_thread.start()
 
     stream_listeners = []
-    stream_listeners.append(ProxyServer())
-    stream_listeners.append(ProxyServer())
-    stream_listeners.append(ProxyServer())
+
+    for i in range(NUMBER_OF_CLIENTS):
+        stream_listeners.append(ProxyServer())
+
 
     print ("UDP proxy at port " + str(UDP_PROXY_PORT))
     print ("UDP proxy: " + get_host_name_IP() + ":" + str(UDP_PROXY_PORT))
