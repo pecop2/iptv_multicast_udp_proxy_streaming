@@ -187,7 +187,7 @@ class StreamHandler(http.server.BaseHTTPRequestHandler):
             while True:
                 data = recv_socket.recv(2048)
                 # recv_packets_counter += 1
-                to_write_data = data[12:]
+                to_write_data = data[12:] # dump the 12 byte rtp header
                 self.wfile.write(to_write_data) 
         except OSError as err:
             # print (err)
@@ -355,9 +355,14 @@ def create_multicast_m3u(data_dir, multicast_m3u_file_name, udp_proxy_port = Non
     original_m3u_file_name = os.path.join(data_dir, "channels_original.m3u")
 
     if not os.path.exists(original_m3u_file_name):
-        print ("Downloading original m3u...")
 
-        original_m3u_url = os.environ['ORIGINAL_M3U_URL']
+        if 'ORIGINAL_M3U_URL' in os.environ:
+            original_m3u_url = os.environ['ORIGINAL_M3U_URL']
+        else:
+            print('No m3u link provided. Exiting...')
+            exit()
+        
+        print ("Downloading original m3u...")
         
         download_m3u_tqdm(original_m3u_url, original_m3u_file_name)
         
@@ -414,6 +419,11 @@ def create_multicast_m3u(data_dir, multicast_m3u_file_name, udp_proxy_port = Non
                 fourth_octet = 1
                 third_octet += 1
 
+            if third_octet == 255:
+                second_octet += 1
+                third_octet = 1
+                fourth_octet = 1
+
     original_m3u.close()
     multicast_m3u.close()
     print ("Finished.")
@@ -445,7 +455,7 @@ def create_file_dirs(DATA_DIR, WEB_SERVER_DIRECTORY, mcast_m3u_path, UDP_PROXY_P
 
 if __name__ == '__main__':
     
-    vlc._default_instance = vlc.Instance(["--file-caching=2000 --network-caching=3000 --live-caching=300 --disc-caching=300 --cr-average=40 --clock-synchro=-1 --clock-jitter=5000"])
+    # vlc._default_instance = vlc.Instance(["--file-caching=2000 --network-caching=3000 --live-caching=300 --disc-caching=300 --cr-average=40 --clock-synchro=-1 --clock-jitter=5000"])
 
     vlc_players_lock = threading.Lock()
 

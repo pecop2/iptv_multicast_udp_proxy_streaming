@@ -11,9 +11,9 @@ services:
       - "8010:8010"
       - "8011:8011"
     environment:
-      - ORIGINAL_M3U_URL=your_m3u_url_here
-      - NUMBER_OF_CLIENTS=3
-      - HOST_IP=local_ip_of_the_host_running_this_service
+      - ORIGINAL_M3U_URL=your_m3u_url_here # ex: http://your-provider.com/list.m3u
+      - NUMBER_OF_CLIENTS=3 # number of users at the same time
+      - HOST_IP=local_ip_of_the_host_running_this_service # ex: 192.168.1.2
     
 
   
