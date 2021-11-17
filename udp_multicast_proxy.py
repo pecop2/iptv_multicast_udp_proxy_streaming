@@ -284,9 +284,9 @@ class ProxyServer(threading.Thread):
         self.name = "ProxyServerThread" + str(time.time())
 
     def run(self):
-        # httpd = http.server.ThreadingHTTPServer(listener_addr, StreamHandler, False)
+        httpd = http.server.ThreadingHTTPServer(listener_addr, StreamHandler, False)
         
-        httpd = http.server.HTTPServer(listener_addr, StreamHandler, False)
+        # httpd = http.server.HTTPServer(listener_addr, StreamHandler, False)
         httpd.socket = listener_sock
         httpd.server_bind = httpd.server_close = lambda httpd: None
         httpd.serve_forever()
@@ -509,8 +509,10 @@ if __name__ == '__main__':
 
     stream_listeners = []
 
-    for i in range(NUMBER_OF_CLIENTS):
-        stream_listeners.append(ProxyServer())
+    # for i in range(NUMBER_OF_CLIENTS):
+    #     stream_listeners.append(ProxyServer())
+    stream_listeners.append(ProxyServer())
+    
 
 
     print ("UDP proxy at port " + str(UDP_PROXY_PORT))
