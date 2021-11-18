@@ -185,7 +185,7 @@ class StreamHandler(http.server.BaseHTTPRequestHandler):
         ###########################################
         # basic
         try:
-            recv_packets_counter = 0
+            # recv_packets_counter = 0
             while True:
                 # data = recv_socket.recv(2048)
                 data = recv_socket.recv(MTU)
@@ -195,7 +195,7 @@ class StreamHandler(http.server.BaseHTTPRequestHandler):
                 #     self.wfile.write(to_write_data[2048*i:2048*(i+1)]) 
                 self.wfile.write(to_write_data) 
 
-                recv_packets_counter += 1
+                # recv_packets_counter += 1
                 # print (len(data))
                 
         except OSError as err:
