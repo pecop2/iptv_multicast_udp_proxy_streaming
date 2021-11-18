@@ -17,6 +17,7 @@ from socket import timeout
 import shutil
 import platform
 
+MTU = int(65536/2)
 
 class MulticastStream(threading.Thread):
     def __init__(self, multicast_address):
@@ -184,11 +185,19 @@ class StreamHandler(http.server.BaseHTTPRequestHandler):
         ###########################################
         # basic
         try:
+            recv_packets_counter = 0
             while True:
-                data = recv_socket.recv(2048)
-                # recv_packets_counter += 1
+                # data = recv_socket.recv(2048)
+                data = recv_socket.recv(MTU)
                 to_write_data = data[12:] # dump the 12 byte rtp header
+
+                # for i in range(256):
+                #     self.wfile.write(to_write_data[2048*i:2048*(i+1)]) 
                 self.wfile.write(to_write_data) 
+
+                recv_packets_counter += 1
+                # print (len(data))
+                
         except OSError as err:
             # print (err)
             print ("Viewer left for address:", mcast_address)
@@ -456,6 +465,7 @@ def create_file_dirs(DATA_DIR, WEB_SERVER_DIRECTORY, mcast_m3u_path, UDP_PROXY_P
 if __name__ == '__main__':
     
     # vlc._default_instance = vlc.Instance(["--file-caching=2000 --network-caching=3000 --live-caching=300 --disc-caching=300 --cr-average=40 --clock-synchro=-1 --clock-jitter=5000"])
+    vlc._default_instance = vlc.Instance(["--mtu={}".format(MTU)])
 
     vlc_players_lock = threading.Lock()
 
