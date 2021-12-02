@@ -6,7 +6,7 @@ Most IPTV providers support only one client at the same time, so target is, usin
 - Local file server started for the newly created m3u list
 - Local udp proxy server
 - Using VLC python library
-- M3U list gets updated every 6 hours
+- M3U list gets updated every 12 hours
 
 # Environment variable config
 - **ORIGINAL_M3U_URL** : the url provided from your IPTV provider
