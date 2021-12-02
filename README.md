@@ -1,7 +1,7 @@
-# iptv_multicast_udp_proxy_streaming
+# IPTV Multicast UDP Proxy streaming
 
-# Idea:
-Most IPTV providers support only one client at the same time, so target is, using VLC players to buffer the stream serving multiple client at the same time. When watching the same stream, n client can be served without problem. When the streams are different, depends on network connection and stream quality. Short video repeats when serving different streams are possible due to change of streams in the background.
+# Idea
+Most IPTV providers support only one client at the same time, so target is, using VLC players to buffer the stream serving multiple clients at the same time. When watching the same stream, N clients can be served without problems. When the streams are different, depends on network connection and stream quality. Short video repeats when serving different streams are possible due to change of streams in the background.
 
 - Local file server started for the newly created m3u list
 - Local udp proxy server
