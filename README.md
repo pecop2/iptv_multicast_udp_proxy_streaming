@@ -1,8 +1,22 @@
 # iptv_multicast_udp_proxy_streaming
 
+# Idea:
+Most IPTV providers support only one client at the same time, so target is, using VLC players to buffer the stream serving multiple client at the same time. When watching the same stream, n client can be served without problem. When the streams are different, depends on network connection and stream quality. Short video repeats when serving different streams are possible due to change of streams in the background.
 
+- Local file server started for the newly created m3u list
+- Local udp proxy server
+- Using VLC python library
+- M3U list gets updated every 6 hours
 
-### Docker build and run
+# Environment variable config
+- **ORIGINAL_M3U_URL** : the url provided from your IPTV provider
+- **NUMBER_OF_CLIENTS** : the expected number of clients in order to pre-start the vlc players (no problem if it is lower than actual, maybe slightly slower response for the additional clients)
+- **HOST_IP** : the local IP address of the machine running this
+
+# Multicast
+- Not every network is multicast ready (enable IGMP if an option), so beware or specifically add routes for loopback of multicast traffic if your network gets flooded (if the router/switch treats it as broadcast)
+
+# Docker build and run
 
 - Build and run
     - **docker-compose up -d --build**
