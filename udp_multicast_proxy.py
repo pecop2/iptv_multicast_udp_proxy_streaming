@@ -332,7 +332,12 @@ def get_receiving_multicast_socket(multicast_address, multicast_port):
 #     return send_socket
 
 def download_m3u_tqdm(url, save_file_name):
-    response=requests.get(url, stream = True)
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'}
+    response=requests.get(url, stream = True, headers=headers)
+
+    if response.status_code != 200:
+        print (f"ERROR downloading original m3u file! Response code: {response.status_code}")
+        exit()
     # req_m3u = requests.get(url)
     # file_name = "channels_original.m3u"
     # print (req_m3u.content.decode()[0])
