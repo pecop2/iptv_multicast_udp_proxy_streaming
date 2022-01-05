@@ -66,7 +66,6 @@ class MulticastStream(threading.Thread):
         vlc_players_dict[self.multicast_address] = (vlc_player, 1)
         vlc_players_lock.release()
 
-        # print (vlc_media_cmd)
 
 def process_server_request(command, multicast_address):
     vlc_players_lock.acquire()
@@ -84,7 +83,7 @@ def start_multicast_player(multicast_address):
         vlc_players_dict[multicast_address] = new_value
         vlc_players_lock.release()
     else:
-        vlc_players_dict[multicast_address] = (None, 1) # da se popolni dictot, za slucajno nareden thread da ne pushti nov player za istiot stream...
+        vlc_players_dict[multicast_address] = (None, 1) # to fill the dict with key, value, in order the next thread not to start a new player for the same stream
         multicast_stream = MulticastStream(multicast_address)
         multicast_stream.start()
 
@@ -101,7 +100,7 @@ def stop_multicast_player(multicast_address):
             vlc_players_q.put(vlc.MediaListPlayer())
 
             del vlc_players_dict[multicast_address]
-        else: # namali number of viewers
+        else: # decrease number of viewers
             vlc_players_dict[multicast_address] = ( old_value[0], old_value[1] - 1 )
     vlc_players_lock.release()
             
@@ -124,7 +123,6 @@ def write_data_stream(data_buffer, data_stream, packet_count, queue):
     mul = 0
 
     for mul in range(int(len(data_buffer) / packet_count)):
-        # print ("mul=", mul)
         for data in data_buffer[mul*packet_count:(mul+1)*packet_count]:
             whole_data += data
         try:
@@ -135,16 +133,13 @@ def write_data_stream(data_buffer, data_stream, packet_count, queue):
             return
 
 def write_to_disk(mcast_address, data):
-    # if not os.path.exists("disk_buffer"):
     disk_buffer_dir = "disk_buffer"
     os.makedirs(name = disk_buffer_dir, exist_ok=True)
 
     vid_name = os.path.join(disk_buffer_dir, mcast_address) + ".mp4"
     
     with open(vid_name, "ab") as vid_file:
-
         vid_file.write(data)
-        # vid_file.r
     
     update_last_written_data_map(mcast_address, data)
 
@@ -156,20 +151,12 @@ def update_last_written_data_map(mcast_address, data):
     last_written_data_lock.release()
 
 
-
 class StreamHandler(http.server.BaseHTTPRequestHandler):
-    # def __init__(self, *args, **kwargs):
-    #     super().__init__(*args, **kwargs)
 
     def do_GET(self):
 
-        # content_length = int(self.headers['Content-Length'])
-        # post_body = self.rfile.read(content_length)
-        exception_queue = queue.Queue()
-
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-type", "application/octet-stream")
-        # self.send_header("Content-type", "video/mp4")
         self.end_headers()
 
         mcast_address_port = self.path.split("/")[-1].split(":")
@@ -177,7 +164,7 @@ class StreamHandler(http.server.BaseHTTPRequestHandler):
         mcast_port = int(mcast_address_port[1])
 
         # here the stream should be started
-        threading.Thread(target = process_server_request, args = ("START", mcast_address) ).start() #dont forget to UNcomment it later
+        threading.Thread(target = process_server_request, args = ("START", mcast_address) ).start()
 
         recv_socket = get_receiving_multicast_socket(mcast_address, mcast_port)
         recv_socket.settimeout(10)
@@ -268,12 +255,9 @@ def start_file_server(dir, port, mcast_channels_m3u_name):
             super().__init__(*args, directory=dir, **kwargs)
         
         def do_POST(self):
-            # print (self.headers)
 
             content_length = int(self.headers['Content-Length'])
             post_body = self.rfile.read(content_length)
-  
-            # print (post_body)
             
             self.send_response(HTTPStatus.OK)
             self.end_headers()
@@ -294,8 +278,8 @@ class ProxyServer(threading.Thread):
 
     def run(self):
         httpd = http.server.ThreadingHTTPServer(listener_addr, StreamHandler, False)
-        
         # httpd = http.server.HTTPServer(listener_addr, StreamHandler, False)
+
         httpd.socket = listener_sock
         httpd.server_bind = httpd.server_close = lambda httpd: None
         httpd.serve_forever()
@@ -338,9 +322,6 @@ def download_m3u_tqdm(url, save_file_name):
     if response.status_code != 200:
         print (f"ERROR downloading original m3u file! Response code: {response.status_code}")
         exit()
-    # req_m3u = requests.get(url)
-    # file_name = "channels_original.m3u"
-    # print (req_m3u.content.decode()[0])
 
     total_size = int(response.headers.get('content-length', 0))
     block_size = 1024
@@ -363,7 +344,6 @@ def create_multicast_m3u(data_dir, multicast_m3u_file_name, udp_proxy_port = Non
             with open(mcast_url_map_NAME, "rb") as channels_map_file:
                 channel_url_map = pickle.load(channels_map_file)
 
-            # print (channel_url_map)
             return channel_url_map
 
     original_m3u_file_name = os.path.join(data_dir, "channels_original.m3u")
@@ -410,7 +390,6 @@ def create_multicast_m3u(data_dir, multicast_m3u_file_name, udp_proxy_port = Non
 
         if curr_line.startswith("#EXTINF"): # m3u line
             curr_multicast_address = str(first_octet) + "." + str(second_octet) + "." + str(third_octet) + "." + str(fourth_octet)
-            # process_m3u_lines((curr_line.strip(), lines[i+1].strip()), curr_multicast_address)
 
             curr_multicast_m3u_source = ""
 
@@ -444,7 +423,6 @@ def create_multicast_m3u(data_dir, multicast_m3u_file_name, udp_proxy_port = Non
     print ("Writing channels map to file...")
 
     with open(mcast_url_map_NAME, "wb") as channels_map_file:
-    # pickle.dump(object, file)
         pickle.dump(channel_url_map, channels_map_file)
 
     print ("Done.")
@@ -452,7 +430,6 @@ def create_multicast_m3u(data_dir, multicast_m3u_file_name, udp_proxy_port = Non
     return channel_url_map
 
 def create_file_dirs(DATA_DIR, WEB_SERVER_DIRECTORY, mcast_m3u_path, UDP_PROXY_PORT):
-    
     
     if os.path.exists(DATA_DIR):
         shutil.rmtree(DATA_DIR)
@@ -476,12 +453,8 @@ if __name__ == '__main__':
 
     DATA_DIR = "data"
 
-
-
     WEB_SERVER_DIRECTORY = os.path.join(DATA_DIR, "web_server_m3u")
     WEB_SERVER_PORT = 8010
-
-
 
     NUMBER_OF_CLIENTS = 3
 
@@ -503,7 +476,6 @@ if __name__ == '__main__':
     listener_sock.bind(listener_addr)
     listener_sock.listen(NUMBER_OF_CLIENTS)
 
-
     last_written_data_map = {}
     last_written_data_lock = threading.Lock()
 
@@ -513,7 +485,7 @@ if __name__ == '__main__':
     mcast_url_map = {}
 
     mcast_m3u_path = os.path.join(WEB_SERVER_DIRECTORY, "channels_multicast.m3u")
-    # mcast_url_map = create_multicast_m3u(DATA_DIR, mcast_m3u_path, udp_proxy_port=UDP_PROXY_PORT)
+
     mcast_url_map_lock.acquire()
     mcast_url_map = create_file_dirs(DATA_DIR, WEB_SERVER_DIRECTORY, mcast_m3u_path, UDP_PROXY_PORT)
     mcast_url_map_lock.release()
@@ -528,8 +500,6 @@ if __name__ == '__main__':
     #     stream_listeners.append(ProxyServer())
     stream_listeners.append(ProxyServer())
     
-
-
     print ("UDP proxy at port " + str(UDP_PROXY_PORT))
     print ("UDP proxy: " + get_host_name_IP() + ":" + str(UDP_PROXY_PORT))
 
@@ -539,13 +509,10 @@ if __name__ == '__main__':
     while True:
 
         print ("Channels active:", len(vlc_players_dict))
-        # for m_addr in vlc_players_dict:
-        #     print (mcast_url_map[m_addr])
 
         data_folder_creation_time = os.path.getctime("data")
 
         if (time.time() - data_folder_creation_time > M3U_UPDATE_TIME):
-            # shutil.rmtree(DATA_DIR)
             mcast_url_map_lock.acquire()
             mcast_url_map = create_file_dirs(DATA_DIR, WEB_SERVER_DIRECTORY, mcast_m3u_path, UDP_PROXY_PORT)
             mcast_url_map_lock.release()
