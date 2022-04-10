@@ -11,7 +11,7 @@ RUN apt install vlc -y
 
 RUN python -m pip install --upgrade pip
 RUN pip install -r requirements.txt
-EXPOSE 8000 8001
+EXPOSE 8010 8011
 
 
 CMD python -u udp_multicast_proxy.py
