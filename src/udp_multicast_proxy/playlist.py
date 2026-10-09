@@ -105,13 +105,11 @@ def download_m3u(url: str) -> str:
         )
     except requests.RequestException as error:
         raise PlaylistError(
-            f"Downloading the original playlist from {url_origin(url)} failed: "
-            f"{redact(str(error), url)}"
+            f"Downloading from {url_origin(url)} failed: {redact(str(error), url)}"
         ) from error
     if response.status_code != requests.codes.ok:
         raise PlaylistError(
-            f"Downloading the original playlist from {url_origin(url)} failed: "
-            f"HTTP {response.status_code}."
+            f"Downloading from {url_origin(url)} failed: HTTP {response.status_code}."
         )
     return response.content.decode("utf-8-sig", errors="replace")
 
@@ -131,19 +129,24 @@ def write_text_atomically(path: Path, text: str) -> None:
 
 
 class ChannelPlaylist:
-    """Keeps the served playlist file and the channel lookup table up to date."""
+    """Keeps the served playlist file and the channel lookup table up to date.
+
+    The provider playlists are merged in the order given; multicast groups are
+    assigned across the merged list, so the channels of the first playlist keep
+    the same URLs as when it is the only one.
+    """
 
     def __init__(
         self,
         *,
-        source_url: str,
+        source_urls: Sequence[str],
         output_path: Path,
         host_ip: str,
         proxy_port: int,
         multicast_port: int,
         download: Callable[[str], str] = download_m3u,
     ) -> None:
-        self._source_url = source_url
+        self._source_urls = tuple(source_urls)
         self._output_path = output_path
         self._host_ip = host_ip
         self._proxy_port = proxy_port
@@ -168,14 +171,27 @@ class ChannelPlaylist:
         return self._channels.get(group)
 
     def refresh(self) -> int:
-        """Download, rewrite and publish the playlist; return the channel count.
+        """Download, merge, rewrite and publish the playlists; return the channel count.
 
-        On failure the previous playlist stays in place and PlaylistError is raised.
+        Nothing is published unless every playlist downloads and has channels: if
+        one is missing, the previous playlist stays in place (so no channel moves to
+        another URL) and PlaylistError is raised.
         """
-        log.info("Downloading the original playlist...")
-        entries = parse_m3u(self._download(self._source_url))
-        if not entries:
-            raise PlaylistError("The original playlist does not contain any channels.")
+        entries: list[PlaylistEntry] = []
+        counts: list[int] = []
+        for number, url in enumerate(self._source_urls, start=1):
+            name = self._name(number)
+            log.info("Downloading the %s from %s...", name, url_origin(url))
+            try:
+                found = parse_m3u(self._download(url))
+            except PlaylistError as error:
+                raise PlaylistError(f"{name.capitalize()}: {error}") from error
+            if not found:
+                raise PlaylistError(
+                    f"{name.capitalize()} ({url_origin(url)}) does not contain any channels."
+                )
+            entries += found
+            counts.append(len(found))
         playlist = build_proxy_playlist(
             entries,
             host_ip=self._host_ip,
@@ -188,5 +204,10 @@ class ChannelPlaylist:
             raise PlaylistError(f"Writing {self._output_path} failed: {error}") from error
         self._channels = playlist.channels
         self._updated_at = time.monotonic()
-        log.info("Playlist updated: %d channels.", len(entries))
+        breakdown = f" ({' + '.join(map(str, counts))})" if len(counts) > 1 else ""
+        log.info("Playlist updated: %d channels%s.", len(entries), breakdown)
         return len(entries)
+
+    def _name(self, number: int) -> str:
+        total = len(self._source_urls)
+        return "original playlist" if total == 1 else f"original playlist {number} of {total}"

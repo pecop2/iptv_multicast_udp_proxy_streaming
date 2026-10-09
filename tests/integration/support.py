@@ -206,7 +206,7 @@ class Proxy:
 
     def __init__(self, provider: Provider, data_dir: Path) -> None:
         self.settings = Settings(
-            original_m3u_url=f"{provider.base_url}/list.m3u",
+            original_m3u_urls=(f"{provider.base_url}/list.m3u",),
             host_ip="127.0.0.1",
             ffmpeg_path=FFMPEG,
             playlist_port=free_port(),

@@ -1,5 +1,6 @@
 import io
 import itertools
+import logging
 import stat
 from pathlib import Path
 from unittest import mock
@@ -223,18 +224,31 @@ def test_write_text_atomically(tmp_path: Path) -> None:
     assert [path.name for path in target.parent.iterdir()] == ["channels.m3u"]
 
 
+FIRST = "http://first.example/get.php?username=USER&password=PASS"
+SECOND = "https://second.example:8443/list.m3u"
+OUTPUT = Path("web") / "channels_multicast.m3u"
+
+
+def small_playlist(prefix: str, channels: int) -> str:
+    lines = ["#EXTM3U"]
+    for number in range(1, channels + 1):
+        lines += [f"#EXTINF:-1,{prefix}{number}", f"http://{prefix}.example/{number}"]
+    return "\n".join(lines) + "\n"
+
+
 class TestChannelPlaylist:
-    def make(self, tmp_path: Path, responses: list[str | Exception]) -> ChannelPlaylist:
+    def make(self, tmp_path: Path, responses: dict[str, list[str | Exception]]) -> ChannelPlaylist:
+        """A ChannelPlaylist whose sources answer with `responses[url]`, in turn."""
+
         def download(url: str) -> str:
-            assert url == "http://provider/list.m3u"
-            response = responses.pop(0)
+            response = responses[url].pop(0)
             if isinstance(response, Exception):
                 raise response
             return response
 
         return ChannelPlaylist(
-            source_url="http://provider/list.m3u",
-            output_path=tmp_path / "web" / "channels_multicast.m3u",
+            source_urls=list(responses),
+            output_path=tmp_path / OUTPUT,
             host_ip=HOST,
             proxy_port=PROXY_PORT,
             multicast_port=MULTICAST_PORT,
@@ -242,7 +256,7 @@ class TestChannelPlaylist:
         )
 
     def test_refresh_publishes_file_and_channels(self, tmp_path: Path) -> None:
-        playlist = self.make(tmp_path, [provider_playlist(3)])
+        playlist = self.make(tmp_path, {FIRST: [provider_playlist(3)]})
         assert playlist.updated_at is None
         assert playlist.upstream_url("239.123.1.1") is None
 
@@ -252,8 +266,7 @@ class TestChannelPlaylist:
         assert playlist.updated_at is not None
         assert playlist.upstream_url("239.123.1.3") == "http://provider.example:8080/user/pass/3"
         assert playlist.upstream_url("239.123.1.4") is None
-        written = (tmp_path / "web" / "channels_multicast.m3u").read_text()
-        assert written == rewrite(provider_playlist(3))[0]
+        assert (tmp_path / OUTPUT).read_text() == rewrite(provider_playlist(3))[0]
 
     @pytest.mark.parametrize(
         "failure",
@@ -263,23 +276,115 @@ class TestChannelPlaylist:
     def test_failed_refresh_keeps_the_previous_playlist(
         self, tmp_path: Path, failure: str | Exception
     ) -> None:
-        playlist = self.make(tmp_path, [provider_playlist(2), failure])
+        playlist = self.make(tmp_path, {FIRST: [provider_playlist(2), failure]})
         playlist.refresh()
         updated_at = playlist.updated_at
-        written = (tmp_path / "web" / "channels_multicast.m3u").read_text()
+        written = (tmp_path / OUTPUT).read_text()
 
         with pytest.raises(PlaylistError):
             playlist.refresh()
 
         assert playlist.channel_count == 2
         assert playlist.updated_at == updated_at
-        assert (tmp_path / "web" / "channels_multicast.m3u").read_text() == written
+        assert (tmp_path / OUTPUT).read_text() == written
 
     def test_refresh_replaces_channels(self, tmp_path: Path) -> None:
-        playlist = self.make(tmp_path, [provider_playlist(3), provider_playlist(1)])
+        playlist = self.make(tmp_path, {FIRST: [provider_playlist(3), provider_playlist(1)]})
         playlist.refresh()
 
         playlist.refresh()
 
         assert playlist.channel_count == 1
         assert playlist.upstream_url("239.123.1.2") is None
+
+    def test_merges_playlists_in_order(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        playlist = self.make(
+            tmp_path, {FIRST: [small_playlist("a", 3)], SECOND: [small_playlist("b", 2)]}
+        )
+
+        with caplog.at_level(logging.INFO):
+            assert playlist.refresh() == 5
+
+        assert [playlist.upstream_url(f"239.123.1.{n}") for n in range(1, 7)] == [
+            "http://a.example/1",
+            "http://a.example/2",
+            "http://a.example/3",
+            "http://b.example/1",
+            "http://b.example/2",
+            None,
+        ]
+        assert (tmp_path / OUTPUT).read_text() == (
+            "#EXTM3U\n"
+            + "".join(
+                f"#EXTINF:-1,{name}\nhttp://{HOST}:{PROXY_PORT}/rtp/239.123.1.{group}:5004\n"
+                for group, name in enumerate(["a1", "a2", "a3", "b1", "b2"], start=1)
+            )
+        )
+        assert "Downloading the original playlist 1 of 2 from http://first.example..." in (
+            caplog.messages
+        )
+        assert "Downloading the original playlist 2 of 2 from https://second.example:8443..." in (
+            caplog.messages
+        )
+        assert "Playlist updated: 5 channels (3 + 2)." in caplog.messages
+        assert "PASS" not in caplog.text
+
+    def test_the_first_playlist_keeps_its_urls_when_more_are_added(self, tmp_path: Path) -> None:
+        alone = self.make(tmp_path / "alone", {FIRST: [provider_playlist(300)]})
+        merged = self.make(
+            tmp_path / "merged", {FIRST: [provider_playlist(300)], SECOND: [small_playlist("b", 5)]}
+        )
+        alone.refresh()
+        merged.refresh()
+
+        alone_m3u = (tmp_path / "alone" / OUTPUT).read_text()
+        assert (tmp_path / "merged" / OUTPUT).read_text().startswith(alone_m3u)
+
+    @pytest.mark.parametrize(
+        ("failure", "message"),
+        [
+            (
+                PlaylistError("Downloading from https://second.example:8443 failed: HTTP 403."),
+                "Original playlist 2 of 2: Downloading from https://second.example:8443 failed: "
+                "HTTP 403.",
+            ),
+            (
+                "<html>Account expired</html>",
+                "Original playlist 2 of 2 (https://second.example:8443) does not contain any "
+                "channels.",
+            ),
+        ],
+        ids=["download error", "no channels"],
+    )
+    def test_one_failing_playlist_keeps_the_whole_previous_playlist(
+        self, tmp_path: Path, failure: str | Exception, message: str
+    ) -> None:
+        # Publishing only the other playlists would move channels to other URLs.
+        playlist = self.make(
+            tmp_path,
+            {
+                FIRST: [small_playlist("a", 3), small_playlist("a", 4)],
+                SECOND: [small_playlist("b", 2), failure],
+            },
+        )
+        playlist.refresh()
+        written = (tmp_path / OUTPUT).read_text()
+
+        with pytest.raises(PlaylistError) as raised:
+            playlist.refresh()
+
+        assert str(raised.value) == message
+        assert playlist.channel_count == 5
+        assert (tmp_path / OUTPUT).read_text() == written
+
+    def test_names_the_only_playlist_without_numbers(self, tmp_path: Path) -> None:
+        playlist = self.make(tmp_path, {FIRST: [""]})
+
+        with pytest.raises(PlaylistError) as raised:
+            playlist.refresh()
+
+        assert str(raised.value) == (
+            "Original playlist (http://first.example) does not contain any channels."
+        )

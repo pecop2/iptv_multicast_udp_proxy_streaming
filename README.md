@@ -7,8 +7,8 @@ multicast group, and served over HTTP to every player watching it. When the same
 N players are served without problems. When the channels differ, it depends on the network connection
 and stream quality.
 
-- The provider's M3U playlist is rewritten so that every channel points at the local HTTP proxy, and
-  served by a small file server. It is refreshed every 12 hours.
+- The provider's M3U playlist (or several playlists, merged) is rewritten so that every channel points
+  at the local HTTP proxy, and served by a small file server. It is refreshed every 12 hours.
 - The first viewer of a channel starts ffmpeg for it; further viewers share it; when the last viewer
   leaves, ffmpeg is stopped. If ffmpeg exits (provider dropped the connection, end of a VOD file), it is
   restarted while viewers remain.
@@ -20,7 +20,11 @@ provider ──HTTP──> ffmpeg ──UDP multicast 239.123.x.y:5004──> HT
 ```
 
 ## Configuration (environment variables)
-- **ORIGINAL_M3U_URL**: the playlist URL provided by your IPTV provider
+- **ORIGINAL_M3U_URL**: the playlist URL provided by your IPTV provider. To combine several playlists
+  (e.g. from different providers), list their URLs separated by spaces; their channels are merged in
+  that order, and adding a playlist at the end doesn't change the URLs of the existing channels. If
+  one of them can't be downloaded during a refresh, the current playlist is kept and the refresh is
+  retried later; at startup the service exits (and Docker restarts it).
 - **HOST_IP**: the local IP address of the machine running this (used in the rewritten playlist)
 - **NUMBER_OF_CLIENTS** (default 3): the expected number of simultaneous viewers; sizes the proxy's
   connection queue
@@ -98,6 +102,8 @@ docker run --rm udp-multicast-proxy:test
   Channel URLs are unchanged, so playlists and favourites saved in IPTV apps keep working.
 - Players are no longer pre-started: ffmpeg is started per channel on demand, which takes a fraction
   of a second. `NUMBER_OF_CLIENTS` now only sizes the connection queue.
+- Several playlists can be combined (see **ORIGINAL_M3U_URL**), and provider credentials are kept
+  out of the logs.
 - A failed playlist refresh keeps the current playlist instead of stopping the service; requests for
   unknown channels get `404`; the container stops gracefully on `docker stop` and restarts
   automatically (`restart: unless-stopped`).
