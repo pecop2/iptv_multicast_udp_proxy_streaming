@@ -1,6 +1,7 @@
 """The HTTP servers over real sockets. Multicast is replaced by plain UDP on
 127.0.0.1 (see test_multicast.py for the multicast receiver itself)."""
 
+import errno
 import http.client
 import queue
 import socket
@@ -143,11 +144,21 @@ def test_streams_the_channel_to_the_viewer(harness: Harness) -> None:
 def test_relays_datagrams_of_any_size(harness: Harness) -> None:
     response = harness.request("GET", CHANNEL_PATH)
     viewer = harness.receivers.next_viewer()
-    datagrams = [b"\x47" * 188, b"\x47" * 32712, b"\x47" * 65507]
-    for datagram in datagrams:
-        harness.sender.sendto(datagram, viewer)
+    # macOS refuses datagrams over 9216 bytes unless the send buffer is raised.
+    harness.sender.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1 << 20)
+    sent = []
+    for size in (188, 1316, 9024, 32712, 65507):
+        datagram = bytes([0x47, size % 251]) * (size // 2) + b"\x47" * (size % 2)
+        try:
+            harness.sender.sendto(datagram, viewer)
+        except OSError as error:
+            if error.errno != errno.EMSGSIZE:  # larger than this OS allows: skip it
+                raise
+        else:
+            sent.append(datagram)
 
-    assert read_exactly(response, sum(map(len, datagrams))) == b"".join(datagrams)
+    assert len(sent) >= 3
+    assert read_exactly(response, sum(map(len, sent))) == b"".join(sent)
 
 
 def test_viewer_leaving_stops_the_stream(harness: Harness) -> None:
@@ -184,7 +195,7 @@ def test_a_viewer_that_stops_reading_is_disconnected(monkeypatch: pytest.MonkeyP
 
         # Keep the channel busy until the proxy gives up on the viewer.
         wait_until(
-            lambda: harness.sender.sendto(b"\x47" * 65000, viewer) > 0 and stopped.is_set(),
+            lambda: harness.sender.sendto(b"\x47" * 9024, viewer) > 0 and stopped.is_set(),
             timeout=20,
         )
     finally:

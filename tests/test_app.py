@@ -62,17 +62,19 @@ def second_provider() -> Iterator[Provider]:
     provider.close()
 
 
-@pytest.fixture
-def fake_ffmpeg(tmp_path: Path) -> str:
-    path = tmp_path / "ffmpeg"
+def make_fake_ffmpeg(directory: Path, version_line: str) -> str:
+    """An executable that answers `-version` like ffmpeg."""
+    path = directory / "ffmpeg"
     path.write_text(
-        f"#!{sys.executable}\n"
-        "import sys\n"
-        "if '-version' in sys.argv:\n"
-        "    print('ffmpeg version 9.0.2-test Copyright (c) 2000-2026')\n"
+        f"#!{sys.executable}\nimport sys\nif '-version' in sys.argv:\n    print({version_line!r})\n"
     )
     path.chmod(0o755)
     return str(path)
+
+
+@pytest.fixture
+def fake_ffmpeg(tmp_path: Path) -> str:
+    return make_fake_ffmpeg(tmp_path, "ffmpeg version 9.0.2-test Copyright (c) 2000-2026")
 
 
 def free_port() -> int:
@@ -231,6 +233,27 @@ def test_exits_when_any_playlist_cannot_be_downloaded(
     assert app.run(settings, threading.Event()) == 1
     origin = second_provider.url.removesuffix("/list.m3u")
     assert f"Original playlist 2 of 2: Downloading from {origin} failed: HTTP 403." in caplog.text
+
+
+def test_exits_when_ffmpeg_is_too_old(
+    tmp_path: Path, provider: Provider, caplog: pytest.LogCaptureFixture
+) -> None:
+    ffmpeg = make_fake_ffmpeg(tmp_path, "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023")
+
+    assert app.run(make_settings(tmp_path, [provider], ffmpeg), threading.Event()) == 1
+    assert "ffmpeg 6.1 is too old: version 7.1 or newer is needed" in caplog.text
+
+
+def test_runs_with_an_ffmpeg_build_without_a_version_number(
+    tmp_path: Path, provider: Provider, caplog: pytest.LogCaptureFixture
+) -> None:
+    ffmpeg = make_fake_ffmpeg(tmp_path, "ffmpeg version N-118123-g0123abcd Copyright (c) 2000-2026")
+    running = RunningApp(make_settings(tmp_path, [provider], ffmpeg))
+    try:
+        wait_until(lambda: running.playlist() != b"")
+    finally:
+        assert running.shutdown() == 0
+    assert "Could not tell the ffmpeg version; version 7.1 or newer is needed." in caplog.text
 
 
 def test_exits_when_ffmpeg_is_missing(

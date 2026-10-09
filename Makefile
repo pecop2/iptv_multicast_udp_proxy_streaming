@@ -42,8 +42,8 @@ test: ## Run the unit and component tests (fast, no ffmpeg needed)
 
 check: lint typecheck test ## Lint, type check and test
 
-run: ## Run the proxy locally (needs ffmpeg, ORIGINAL_M3U_URL and HOST_IP)
-	$(UV) run udp-multicast-proxy
+run: ## Run the proxy without Docker (needs ffmpeg 7.1+; settings from .env, see .env.example)
+	$(UV) run $(if $(wildcard .env),--env-file .env) udp-multicast-proxy
 
 ##@ Docker
 

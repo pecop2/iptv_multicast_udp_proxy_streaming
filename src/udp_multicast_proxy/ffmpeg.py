@@ -35,6 +35,7 @@ lets a map match nothing (e.g. no video on radio channels).
 """
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -53,6 +54,10 @@ UDP_PACKET_SIZE = 7 * 188
 # the streams never leave the local network segment.
 MULTICAST_TTL = 1
 MAX_INTERLEAVE_DELTA_US = 500_000
+# The stream selection below ("0:v:u:?") needs the stream specifier parser of
+# ffmpeg 7.1. Older versions reject it, fall back to one video and one audio track
+# and silently drop the other audio languages and subtitles.
+MINIMUM_VERSION = (7, 1)
 
 MEDIA_FILE_EXTENSIONS = frozenset(
     {".mp4", ".m4v", ".mkv", ".mov", ".avi", ".webm", ".flv", ".wmv", ".mpg", ".mpeg", ".vob"}
@@ -66,6 +71,16 @@ class SourceKind(StrEnum):
     LIVE_TS = "live MPEG-TS"
     HLS = "HLS"
     MEDIA_FILE = "media file"
+
+
+def parse_version(version_line: str) -> tuple[int, int] | None:
+    """(major, minor) from the first line of `ffmpeg -version`.
+
+    None when the line has no release number, as with builds from git master
+    ("ffmpeg version N-118123-g...").
+    """
+    match = re.match(r"ffmpeg version n?(\d+)\.(\d+)", version_line)
+    return (int(match[1]), int(match[2])) if match else None
 
 
 def classify_source(url: str) -> SourceKind:
