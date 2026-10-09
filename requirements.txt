@@ -1,3 +1,0 @@
-python-vlc==3.0.9113
-requests
-tqdm
