@@ -71,7 +71,7 @@ def _required_http_url(environ: Mapping[str, str], name: str) -> str:
     value = _required(environ, name)
     parts = urlsplit(value)
     if parts.scheme not in {"http", "https"} or not parts.netloc:
-        raise ConfigError(f"{name} must be an http:// or https:// URL, got {value!r}.")
+        raise ConfigError(f"{name} must be an http:// or https:// URL.")
     return value
 
 

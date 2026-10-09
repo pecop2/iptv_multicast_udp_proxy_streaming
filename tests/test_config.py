@@ -62,8 +62,11 @@ def test_required_variables(missing: str) -> None:
     "url", ["your_m3u_url_here", "ftp://provider.example/list.m3u", "http://", "provider/list.m3u"]
 )
 def test_rejects_non_http_playlist_url(url: str) -> None:
-    with pytest.raises(ConfigError, match="ORIGINAL_M3U_URL"):
+    with pytest.raises(ConfigError, match="ORIGINAL_M3U_URL") as raised:
         Settings.from_env(REQUIRED | {"ORIGINAL_M3U_URL": url})
+
+    # The value is not echoed: it may hold the account's credentials.
+    assert str(raised.value) == "ORIGINAL_M3U_URL must be an http:// or https:// URL."
 
 
 @pytest.mark.parametrize("value", ["three", "0", "-1", "2.5"])

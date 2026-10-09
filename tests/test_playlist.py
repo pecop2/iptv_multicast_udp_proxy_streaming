@@ -197,6 +197,22 @@ def test_download_wraps_network_errors() -> None:
         download_m3u("http://provider/list.m3u")
 
 
+def test_download_errors_do_not_reveal_credentials() -> None:
+    url = "http://provider.example:8080/get.php?username=USER&password=PASS"
+    error = requests.ConnectionError(
+        "HTTPConnectionPool(host='provider.example', port=8080): Max retries exceeded with url: "
+        "/get.php?username=USER&password=PASS (Caused by ...: Connection refused)"
+    )
+    with mock.patch("requests.get", side_effect=error), pytest.raises(PlaylistError) as raised:
+        download_m3u(url)
+
+    message = str(raised.value)
+    assert "http://provider.example:8080" in message
+    assert "Connection refused" in message
+    assert "USER" not in message
+    assert "PASS" not in message
+
+
 def test_write_text_atomically(tmp_path: Path) -> None:
     target = tmp_path / "nested" / "channels.m3u"
     write_text_atomically(target, "first\n")

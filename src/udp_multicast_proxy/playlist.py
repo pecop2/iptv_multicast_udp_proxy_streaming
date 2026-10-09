@@ -11,6 +11,8 @@ from types import MappingProxyType
 
 import requests
 
+from .redaction import redact, url_origin
+
 log = logging.getLogger(__name__)
 
 # Some providers only hand the playlist to browser-like clients; this is the exact
@@ -102,10 +104,14 @@ def download_m3u(url: str) -> str:
             url, headers={"User-Agent": PLAYLIST_USER_AGENT}, timeout=DOWNLOAD_TIMEOUT
         )
     except requests.RequestException as error:
-        raise PlaylistError(f"Downloading the original playlist failed: {error}") from error
+        raise PlaylistError(
+            f"Downloading the original playlist from {url_origin(url)} failed: "
+            f"{redact(str(error), url)}"
+        ) from error
     if response.status_code != requests.codes.ok:
         raise PlaylistError(
-            f"Downloading the original playlist failed: HTTP {response.status_code}."
+            f"Downloading the original playlist from {url_origin(url)} failed: "
+            f"HTTP {response.status_code}."
         )
     return response.content.decode("utf-8-sig", errors="replace")
 

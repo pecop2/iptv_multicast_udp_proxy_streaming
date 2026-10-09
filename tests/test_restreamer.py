@@ -205,6 +205,26 @@ def test_command_errors_are_logged_and_retried(caplog: pytest.LogCaptureFixture)
     assert "could not prepare the ffmpeg command" in caplog.text
 
 
+def test_forwarded_log_lines_hide_the_channel_url(
+    spawner: RecordingSpawner, caplog: pytest.LogCaptureFixture
+) -> None:
+    url = "http://provider/live/USER/PASS/1.ts"
+    failing = [
+        *script(f"import sys; print('[error] Error opening input file {url}.', file=sys.stderr)"),
+        "-i",
+        url,
+    ]
+    restreamer = Restreamer("239.1.1.1", lambda: failing, spawn=spawner, restart_delay=60)
+
+    with caplog.at_level(logging.WARNING, logger="udp_multicast_proxy.restreamer"):
+        restreamer.start()
+        wait_until(lambda: "exited with code 0" in caplog.text)
+    restreamer.stop()
+
+    assert "Error opening input file http://provider/<redacted>." in caplog.text
+    assert "PASS" not in caplog.text
+
+
 def test_debug_log_hides_the_channel_url(
     spawner: RecordingSpawner, caplog: pytest.LogCaptureFixture
 ) -> None:
