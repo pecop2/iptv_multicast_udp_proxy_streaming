@@ -12,7 +12,7 @@ from types import FrameType
 
 from . import hls
 from .config import ConfigError, Settings
-from .ffmpeg import CommandFactory
+from .ffmpeg import MINIMUM_VERSION, CommandFactory, parse_version
 from .playlist import ChannelPlaylist, PlaylistError
 from .restreamer import Restreamer
 from .servers import StreamProxyServer, create_playlist_server
@@ -35,10 +35,12 @@ def main() -> int:
 
 def run(settings: Settings, stop: threading.Event) -> int:
     """Serve the playlist and the streams until `stop` is set; return an exit code."""
-    version = _ffmpeg_version(settings.ffmpeg_path)
-    if version is None:
+    version_line = _ffmpeg_version(settings.ffmpeg_path)
+    if version_line is None:
         return 1
-    log.info("Using %s", version)
+    log.info("Using %s", version_line)
+    if not _ffmpeg_is_recent_enough(version_line):
+        return 1
 
     playlist = ChannelPlaylist(
         source_urls=settings.original_m3u_urls,
@@ -143,6 +145,22 @@ def _ffmpeg_version(ffmpeg_path: str) -> str | None:
         log.error("ffmpeg (%s) is not usable: %s", ffmpeg_path, error)
         return None
     return result.stdout.partition("\n")[0]
+
+
+def _ffmpeg_is_recent_enough(version_line: str) -> bool:
+    required = ".".join(map(str, MINIMUM_VERSION))
+    version = parse_version(version_line)
+    if version is None:
+        log.warning("Could not tell the ffmpeg version; version %s or newer is needed.", required)
+    elif version < MINIMUM_VERSION:
+        log.error(
+            "ffmpeg %d.%d is too old: version %s or newer is needed to keep every audio "
+            "and subtitle track.",
+            *version,
+            required,
+        )
+        return False
+    return True
 
 
 def _stop_on_signals() -> threading.Event:

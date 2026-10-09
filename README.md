@@ -32,7 +32,8 @@ provider ──HTTP──> ffmpeg ──UDP multicast 239.123.x.y:5004──> HT
   Defaults to `VLC/3.0.23 LibVLC/3.0.23`, what the previous, VLC-based version sent, as many providers
   filter by User-Agent.
 - **LOG_LEVEL** (optional, default `INFO`): `DEBUG`, `INFO`, `WARNING` or `ERROR`
-- **FFMPEG_PATH** (optional, default `ffmpeg`): only needed when running outside Docker
+- **FFMPEG_PATH** (optional): the ffmpeg binary to use when running without Docker, if `ffmpeg` on
+  the PATH is not the one you want
 
 ## Docker build and run
 - Change the environment variables in **docker-compose.yml** to your own values.
@@ -44,6 +45,23 @@ provider ──HTTP──> ffmpeg ──UDP multicast 239.123.x.y:5004──> HT
   is the value of **HOST_IP**) and add it to your IPTV app.
 - The image is built for linux/amd64 and linux/arm64 (e.g. a 64-bit Raspberry Pi OS). It contains a
   static build of ffmpeg 9.0.2 and Python 3.14.
+
+## Running without Docker (macOS, Linux)
+Needs **ffmpeg 7.1 or newer** (older versions would silently drop audio and subtitle tracks, so
+the service refuses to start with them) and [uv](https://docs.astral.sh/uv/), which also installs
+Python 3.14 if needed.
+- macOS: `brew install ffmpeg uv`
+- Linux: ffmpeg 7.1+ from your distribution (Debian 13 has it; Ubuntu 24.04's 6.1 is too old) or a
+  static build linked from https://ffmpeg.org/download.html, and uv from its installation page.
+
+```sh
+make install            # create .venv with the locked dependencies
+cp .env.example .env    # then set ORIGINAL_M3U_URL and HOST_IP in .env
+make run
+```
+
+On macOS, allow incoming connections for Python if the firewall asks: your IPTV apps connect to
+ports 8010 and 8011.
 
 ## How channels are restreamed
 Channel URLs are recognised by their extension:
@@ -78,7 +96,7 @@ make check       # lint, type check (mypy, strict) and the unit/component tests 
 make format      # format the code
 make test-docker # every test, including the end-to-end tests, in the test image
 make all         # check + test-docker + build the service image
-make run         # run without Docker (needs ffmpeg, ORIGINAL_M3U_URL and HOST_IP; FFMPEG_PATH optional)
+make run         # run without Docker (see "Running without Docker")
 ```
 
 ### Tests

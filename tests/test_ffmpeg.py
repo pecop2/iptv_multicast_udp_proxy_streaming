@@ -4,10 +4,12 @@ import pytest
 import requests
 
 from udp_multicast_proxy.ffmpeg import (
+    MINIMUM_VERSION,
     CommandFactory,
     SourceKind,
     build_command,
     classify_source,
+    parse_version,
     stream_maps,
 )
 
@@ -37,6 +39,29 @@ UA = "VLC/3.0.23 LibVLC/3.0.23"
 )
 def test_classify_source(url: str, kind: SourceKind) -> None:
     assert classify_source(url) is kind
+
+
+@pytest.mark.parametrize(
+    ("line", "version"),
+    [
+        ("ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers", (9, 0)),
+        ("ffmpeg version 8.0.1 Copyright (c) 2000-2025 the FFmpeg developers", (8, 0)),
+        ("ffmpeg version 7.1.1-1+b1 Copyright (c) 2000-2025 the FFmpeg developers", (7, 1)),
+        ("ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers", (6, 1)),
+        ("ffmpeg version n7.1.1-20250101 Copyright (c) 2000-2025 the FFmpeg developers", (7, 1)),
+        ("ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers", (7, 1)),
+        ("ffmpeg version N-118123-g0123abcd Copyright (c) 2000-2026", None),
+        ("something else entirely", None),
+    ],
+)
+def test_parse_version(line: str, version: tuple[int, int] | None) -> None:
+    assert parse_version(line) == version
+
+
+def test_minimum_version_is_the_first_one_that_understands_the_maps() -> None:
+    # Measured: 5.1, 6.1 and 7.0 reject "0:v:u:?" and drop tracks; 7.1+ accept it.
+    assert MINIMUM_VERSION == (7, 1)
+    assert (7, 0) < MINIMUM_VERSION <= (7, 1) < (8, 0) < (9, 0)
 
 
 def test_live_ts_keeps_all_usable_tracks_and_subtitles() -> None:
