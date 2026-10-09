@@ -1,20 +1,18 @@
-version: '3.9'
-
 services:
 
   udp_multicast_proxy:
     build:
       context: .
-    image: udp_multicast_proxy:0.0.1
+    image: udp_multicast_proxy:2.0.0
     container_name: udp-multicast-proxy-service
+    restart: unless-stopped
     ports:
       - "8010:8010"
       - "8011:8011"
     environment:
       - ORIGINAL_M3U_URL=your_m3u_url_here # ex: http://your-provider.com/list.m3u
-      - NUMBER_OF_CLIENTS=3 # number of users at the same time
+      - NUMBER_OF_CLIENTS=3 # expected simultaneous viewers (sizes the proxy's connection queue)
       - HOST_IP=local_ip_of_the_host_running_this_service # ex: 192.168.1.2
-    
-
-  
-   
+      # Optional:
+      # - UPSTREAM_USER_AGENT=VLC/3.0.23 LibVLC/3.0.23 # User-Agent sent to the provider for streams
+      # - LOG_LEVEL=INFO # DEBUG, INFO, WARNING or ERROR
