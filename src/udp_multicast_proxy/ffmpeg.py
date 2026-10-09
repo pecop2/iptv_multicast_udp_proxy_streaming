@@ -44,6 +44,7 @@ from urllib.parse import urlsplit
 import requests
 
 from . import hls
+from .redaction import redact
 
 log = logging.getLogger(__name__)
 
@@ -143,7 +144,7 @@ class CommandFactory:
 
     def __call__(self, group: str, source_url: str) -> list[str]:
         kind = classify_source(source_url)
-        hls_program = self._best_hls_program(source_url) if kind is SourceKind.HLS else None
+        hls_program = self._best_hls_program(group, source_url) if kind is SourceKind.HLS else None
         log.info(
             "%s: restreaming %s source%s.",
             group,
@@ -160,7 +161,7 @@ class CommandFactory:
             hls_program=hls_program,
         )
 
-    def _best_hls_program(self, url: str) -> int | None:
+    def _best_hls_program(self, group: str, url: str) -> int | None:
         """The ffmpeg program of the best variant, or None to map every stream.
 
         None for media playlists and single-variant masters (nothing to choose), and
@@ -170,7 +171,11 @@ class CommandFactory:
         try:
             playlist = self.fetch_playlist(url)
         except requests.RequestException as error:
-            log.warning("Could not inspect HLS playlist %s, mapping all variants: %s", url, error)
+            log.warning(
+                "%s: could not inspect the HLS playlist, mapping all variants: %s",
+                group,
+                redact(str(error), url),
+            )
             return None
         variants = hls.parse_variants(playlist)
         if len(variants) < 2:

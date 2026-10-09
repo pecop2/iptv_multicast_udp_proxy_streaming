@@ -182,10 +182,17 @@ class TestCommandFactory:
     def test_unreachable_playlist_falls_back_to_every_stream(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        factory = self.factory({"http://p/x.m3u8": requests.ConnectionError("refused")})
+        url = "http://p/live/USER/PASS/1.m3u8"
+        error = requests.ConnectionError(
+            "Max retries exceeded with url: /live/USER/PASS/1.m3u8 (refused)"
+        )
+        factory = self.factory({url: error})
 
         with caplog.at_level(logging.WARNING):
-            command = factory("239.1.1.1", "http://p/x.m3u8")
+            command = factory("239.1.1.1", url)
 
         assert "0:v:u:?" in command
+        assert "239.1.1.1: could not inspect the HLS playlist" in caplog.text
         assert "refused" in caplog.text
+        assert "USER" not in caplog.text
+        assert "PASS" not in caplog.text

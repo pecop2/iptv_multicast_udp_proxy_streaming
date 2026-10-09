@@ -55,6 +55,14 @@ def provider() -> Iterator[Provider]:
 
 
 @pytest.fixture
+def second_provider() -> Iterator[Provider]:
+    provider = Provider()
+    provider.playlists = ["#EXTM3U\n#EXTINF:-1,Two\nhttp://second-provider/2\n"]
+    yield provider
+    provider.close()
+
+
+@pytest.fixture
 def fake_ffmpeg(tmp_path: Path) -> str:
     path = tmp_path / "ffmpeg"
     path.write_text(
@@ -74,9 +82,11 @@ def free_port() -> int:
         return port
 
 
-def make_settings(tmp_path: Path, provider: Provider, ffmpeg: str, **overrides: float) -> Settings:
+def make_settings(
+    tmp_path: Path, providers: list[Provider], ffmpeg: str, **overrides: float
+) -> Settings:
     return Settings(
-        original_m3u_url=provider.url,
+        original_m3u_urls=tuple(provider.url for provider in providers),
         host_ip="127.0.0.1",
         ffmpeg_path=ffmpeg,
         playlist_port=free_port(),
@@ -130,7 +140,7 @@ class RunningApp:
 def test_serves_playlist_and_streams_then_shuts_down_cleanly(
     tmp_path: Path, provider: Provider, fake_ffmpeg: str, caplog: pytest.LogCaptureFixture
 ) -> None:
-    settings = make_settings(tmp_path, provider, fake_ffmpeg)
+    settings = make_settings(tmp_path, [provider], fake_ffmpeg)
     with caplog.at_level(logging.INFO):
         running = RunningApp(settings)
         wait_until(lambda: running.playlist() != b"")
@@ -159,7 +169,7 @@ def test_refreshes_the_playlist_when_due(
         "#EXTM3U\n#EXTINF:-1,One\nhttp://provider/1\n#EXTINF:-1,Two\nhttp://provider/2\n"
     )
     running = RunningApp(
-        make_settings(tmp_path, provider, fake_ffmpeg, playlist_refresh_interval=0.1)
+        make_settings(tmp_path, [provider], fake_ffmpeg, playlist_refresh_interval=0.1)
     )
     try:
         wait_until(lambda: b"239.123.1.2" in running.playlist())
@@ -171,7 +181,7 @@ def test_a_failed_refresh_keeps_serving_the_current_playlist(
     tmp_path: Path, provider: Provider, fake_ffmpeg: str, caplog: pytest.LogCaptureFixture
 ) -> None:
     running = RunningApp(
-        make_settings(tmp_path, provider, fake_ffmpeg, playlist_refresh_interval=0.1)
+        make_settings(tmp_path, [provider], fake_ffmpeg, playlist_refresh_interval=0.1)
     )
     try:
         wait_until(lambda: running.playlist() != b"")
@@ -185,10 +195,48 @@ def test_a_failed_refresh_keeps_serving_the_current_playlist(
         assert running.shutdown() == 0
 
 
+def test_merges_the_playlists_of_several_providers(
+    tmp_path: Path, provider: Provider, second_provider: Provider, fake_ffmpeg: str
+) -> None:
+    settings = make_settings(tmp_path, [provider, second_provider], fake_ffmpeg)
+    running = RunningApp(settings)
+    try:
+        wait_until(lambda: running.playlist() != b"")
+
+        proxy = settings.stream_proxy_port
+        assert (
+            running.playlist()
+            == (
+                "#EXTM3U\n"
+                f"#EXTINF:-1,One\nhttp://127.0.0.1:{proxy}/rtp/239.123.1.1:5004\n"
+                f"#EXTINF:-1,Two\nhttp://127.0.0.1:{proxy}/rtp/239.123.1.2:5004\n"
+            ).encode()
+        )
+        for group in ("239.123.1.1", "239.123.1.2"):
+            assert running.get(proxy, f"/rtp/{group}:5004", method="HEAD")[0] == 200
+    finally:
+        assert running.shutdown() == 0
+
+
+def test_exits_when_any_playlist_cannot_be_downloaded(
+    tmp_path: Path,
+    provider: Provider,
+    second_provider: Provider,
+    fake_ffmpeg: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    second_provider.status = HTTPStatus.FORBIDDEN
+    settings = make_settings(tmp_path, [provider, second_provider], fake_ffmpeg)
+
+    assert app.run(settings, threading.Event()) == 1
+    origin = second_provider.url.removesuffix("/list.m3u")
+    assert f"Original playlist 2 of 2: Downloading from {origin} failed: HTTP 403." in caplog.text
+
+
 def test_exits_when_ffmpeg_is_missing(
     tmp_path: Path, provider: Provider, caplog: pytest.LogCaptureFixture
 ) -> None:
-    settings = make_settings(tmp_path, provider, str(tmp_path / "no-such-ffmpeg"))
+    settings = make_settings(tmp_path, [provider], str(tmp_path / "no-such-ffmpeg"))
 
     assert app.run(settings, threading.Event()) == 1
     assert "is not usable" in caplog.text
@@ -199,14 +247,14 @@ def test_exits_when_the_playlist_cannot_be_downloaded(
 ) -> None:
     provider.status = HTTPStatus.FORBIDDEN
 
-    assert app.run(make_settings(tmp_path, provider, fake_ffmpeg), threading.Event()) == 1
+    assert app.run(make_settings(tmp_path, [provider], fake_ffmpeg), threading.Event()) == 1
     assert "HTTP 403" in caplog.text
 
 
 def test_exits_when_a_port_is_taken(
     tmp_path: Path, provider: Provider, fake_ffmpeg: str, caplog: pytest.LogCaptureFixture
 ) -> None:
-    settings = make_settings(tmp_path, provider, fake_ffmpeg)
+    settings = make_settings(tmp_path, [provider], fake_ffmpeg)
     with socket.socket() as taken:
         taken.bind(("", settings.stream_proxy_port))
         taken.listen()

@@ -1,5 +1,6 @@
 """Keeping one ffmpeg process running for a channel while it has viewers."""
 
+import itertools
 import logging
 import re
 import shlex
@@ -7,6 +8,8 @@ import subprocess
 import threading
 from collections.abc import Callable, Iterable, Sequence
 from typing import Protocol
+
+from .redaction import redact
 
 log = logging.getLogger(__name__)
 
@@ -114,7 +117,7 @@ class Restreamer:
                 return
             self._process = process
         log.debug("%s: started %s", self._name, _redacted(command))
-        self._forward_log(process)
+        self._forward_log(process, _input_url(command))
         exit_code = process.wait()
         if not self._stopping.is_set():
             log.warning(
@@ -124,7 +127,7 @@ class Restreamer:
                 self._restart_delay,
             )
 
-    def _forward_log(self, process: Process) -> None:
+    def _forward_log(self, process: Process, source_url: str | None) -> None:
         """Relay ffmpeg's log lines until it closes stderr (when it exits)."""
         if process.stderr is None:
             return
@@ -132,6 +135,8 @@ class Restreamer:
             line = raw_line.rstrip()
             if not line or line in _BENIGN_LOG_LINES:
                 continue
+            if source_url:
+                line = redact(line, source_url)  # e.g. "Error opening input file <URL>."
             tag = _LOG_LEVEL_TAG.search(line)
             level = logging.WARNING if tag is None or tag[1] == "warning" else logging.ERROR
             log.log(level, "%s: ffmpeg: %s", self._name, line)
@@ -148,10 +153,15 @@ class Restreamer:
             process.wait()
 
 
+def _input_url(command: Sequence[str]) -> str | None:
+    """The URL ffmpeg reads from (the argument of `-i`)."""
+    for option, value in itertools.pairwise(command):
+        if option == "-i":
+            return value
+    return None
+
+
 def _redacted(command: Sequence[str]) -> str:
     """The command for logging, without the source URL (it holds credentials)."""
-    shown = list(command)
-    for index, argument in enumerate(shown[:-1]):
-        if argument == "-i":
-            shown[index + 1] = "<channel URL>"
-    return shlex.join(shown)
+    source_url = _input_url(command)
+    return shlex.join("<channel URL>" if arg == source_url else arg for arg in command)

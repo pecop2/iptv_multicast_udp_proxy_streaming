@@ -24,7 +24,7 @@ class Settings:
     defaults that tests override.
     """
 
-    original_m3u_url: str
+    original_m3u_urls: tuple[str, ...]  # merged in this order
     host_ip: str
     number_of_clients: int = 3
     ffmpeg_path: str = "ffmpeg"
@@ -49,7 +49,7 @@ class Settings:
     def from_env(cls, environ: Mapping[str, str] = os.environ) -> Settings:
         """Build settings from environment variables, validating each one."""
         return cls(
-            original_m3u_url=_required_http_url(environ, "ORIGINAL_M3U_URL"),
+            original_m3u_urls=_playlist_urls(environ, "ORIGINAL_M3U_URL"),
             host_ip=_required(environ, "HOST_IP"),
             number_of_clients=_positive_int(environ, "NUMBER_OF_CLIENTS", default=3),
             ffmpeg_path=environ.get("FFMPEG_PATH", "").strip() or "ffmpeg",
@@ -67,12 +67,22 @@ def _required(environ: Mapping[str, str], name: str) -> str:
     return value
 
 
-def _required_http_url(environ: Mapping[str, str], name: str) -> str:
-    value = _required(environ, name)
-    parts = urlsplit(value)
-    if parts.scheme not in {"http", "https"} or not parts.netloc:
-        raise ConfigError(f"{name} must be an http:// or https:// URL, got {value!r}.")
-    return value
+def _playlist_urls(environ: Mapping[str, str], name: str) -> tuple[str, ...]:
+    """One or more http(s) URLs separated by whitespace (URLs cannot contain spaces).
+
+    The URLs are not echoed in errors: they usually hold the account's credentials.
+    """
+    urls = tuple(_required(environ, name).split())
+    for number, url in enumerate(urls, start=1):
+        parts = urlsplit(url)
+        if parts.scheme not in {"http", "https"} or not parts.netloc:
+            what = f"URL {number}" if len(urls) > 1 else "it"
+            raise ConfigError(
+                f"{name} must hold http:// or https:// URLs separated by spaces; {what} is not one."
+            )
+        if url in urls[: number - 1]:
+            raise ConfigError(f"{name} lists URL {number} more than once.")
+    return urls
 
 
 def _positive_int(environ: Mapping[str, str], name: str, *, default: int) -> int:

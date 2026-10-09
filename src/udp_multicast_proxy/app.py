@@ -41,7 +41,7 @@ def run(settings: Settings, stop: threading.Event) -> int:
     log.info("Using %s", version)
 
     playlist = ChannelPlaylist(
-        source_url=settings.original_m3u_url,
+        source_urls=settings.original_m3u_urls,
         output_path=settings.playlist_dir / settings.playlist_file_name,
         host_ip=settings.host_ip,
         proxy_port=settings.stream_proxy_port,

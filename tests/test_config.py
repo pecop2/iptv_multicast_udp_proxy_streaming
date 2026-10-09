@@ -10,7 +10,7 @@ REQUIRED = {"ORIGINAL_M3U_URL": "http://provider.example/list.m3u", "HOST_IP": "
 def test_defaults() -> None:
     settings = Settings.from_env(REQUIRED)
 
-    assert settings.original_m3u_url == "http://provider.example/list.m3u"
+    assert settings.original_m3u_urls == ("http://provider.example/list.m3u",)
     assert settings.host_ip == "192.168.1.2"
     assert settings.number_of_clients == 3
     assert settings.ffmpeg_path == "ffmpeg"
@@ -51,10 +51,13 @@ def test_blank_optional_variables_fall_back_to_defaults() -> None:
 
 
 @pytest.mark.parametrize("missing", ["ORIGINAL_M3U_URL", "HOST_IP"])
-def test_required_variables(missing: str) -> None:
-    environ = {name: value for name, value in REQUIRED.items() if name != missing}
+@pytest.mark.parametrize("value", [None, "", "  \n "], ids=["unset", "empty", "blank"])
+def test_required_variables(missing: str, value: str | None) -> None:
+    environ = {name: v for name, v in REQUIRED.items() if name != missing}
+    if value is not None:
+        environ[missing] = value
 
-    with pytest.raises(ConfigError, match=missing):
+    with pytest.raises(ConfigError, match=f"{missing} is required"):
         Settings.from_env(environ)
 
 
@@ -62,8 +65,46 @@ def test_required_variables(missing: str) -> None:
     "url", ["your_m3u_url_here", "ftp://provider.example/list.m3u", "http://", "provider/list.m3u"]
 )
 def test_rejects_non_http_playlist_url(url: str) -> None:
-    with pytest.raises(ConfigError, match="ORIGINAL_M3U_URL"):
+    with pytest.raises(ConfigError, match="ORIGINAL_M3U_URL") as raised:
         Settings.from_env(REQUIRED | {"ORIGINAL_M3U_URL": url})
+
+    # The value is not echoed: it may hold the account's credentials.
+    assert str(raised.value) == (
+        "ORIGINAL_M3U_URL must hold http:// or https:// URLs separated by spaces; it is not one."
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "http://a.example/list.m3u https://b.example:8443/get.php?u=1&p=2",
+        "  http://a.example/list.m3u\n\thttps://b.example:8443/get.php?u=1&p=2\n",
+    ],
+    ids=["spaces", "newlines and tabs"],
+)
+def test_several_playlist_urls(value: str) -> None:
+    settings = Settings.from_env(REQUIRED | {"ORIGINAL_M3U_URL": value})
+
+    assert settings.original_m3u_urls == (
+        "http://a.example/list.m3u",
+        "https://b.example:8443/get.php?u=1&p=2",
+    )
+
+
+def test_names_the_invalid_url_by_position() -> None:
+    with pytest.raises(ConfigError) as raised:
+        Settings.from_env(REQUIRED | {"ORIGINAL_M3U_URL": "http://a.example/x your_m3u_url_here"})
+
+    assert str(raised.value) == (
+        "ORIGINAL_M3U_URL must hold http:// or https:// URLs separated by spaces; URL 2 is not one."
+    )
+
+
+def test_rejects_duplicate_playlist_urls() -> None:
+    value = "http://a.example/x http://b.example/y http://a.example/x"
+
+    with pytest.raises(ConfigError, match="lists URL 3 more than once"):
+        Settings.from_env(REQUIRED | {"ORIGINAL_M3U_URL": value})
 
 
 @pytest.mark.parametrize("value", ["three", "0", "-1", "2.5"])

@@ -10,7 +10,7 @@ services:
       - "8010:8010"
       - "8011:8011"
     environment:
-      - ORIGINAL_M3U_URL=your_m3u_url_here # ex: http://your-provider.com/list.m3u
+      - ORIGINAL_M3U_URL=your_m3u_url_here # ex: http://your-provider.com/list.m3u (several: separate the URLs with spaces)
       - NUMBER_OF_CLIENTS=3 # expected simultaneous viewers (sizes the proxy's connection queue)
       - HOST_IP=local_ip_of_the_host_running_this_service # ex: 192.168.1.2
       # Optional:
